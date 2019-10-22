@@ -2,14 +2,16 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdlog "log"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	logrus_bugsnag "github.com/Shopify/logrus-bugsnag"
 	"github.com/bugsnag/bugsnag-go"
+	bugsnag_errors "github.com/bugsnag/bugsnag-go/errors"
 	nsq "github.com/nsqio/go-nsq"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -31,11 +33,14 @@ type LoggingConfig struct {
 	BugsnagNotifyReleaseStages []string
 	BugsnagProjectPackages     []string
 	BugsnagProjectPaths        []string
+	BugsnagPackageRoot         string
 }
 
 type Logger struct {
 	*logrus.Logger
 }
+
+type bugsnagHook struct{}
 
 func (l Logger) getNSQLogLevel() nsq.LogLevel {
 	switch l.Level {
@@ -170,8 +175,7 @@ func (e *Entry) WithNSQMessageID(id nsq.MessageID) *Entry {
 
 func (e *Entry) WithDuration(d time.Duration) *Entry {
 	return e.
-		WithField("duration_ms", d.Round(time.Millisecond).Nanoseconds()/1000000).
-		WithField("nsq_message_process_duration", d.Nanoseconds())
+		WithField("duration_ms", d.Round(time.Millisecond).Nanoseconds()/1000000)
 }
 
 func (e *Entry) WithE2EDuration(d time.Duration) *Entry {
@@ -228,11 +232,42 @@ func getLogrusLogLevel(level string) logrus.Level {
 	return loglevel
 }
 
-func addBugsnagHook(log *logrus.Logger) {
-	hook, err := logrus_bugsnag.NewBugsnagHook()
+func (b *bugsnagHook) Fire(entry *logrus.Entry) error {
+	var notifyErr error
+	err, ok := entry.Data["error"].(error)
+	if ok {
+		if entry.Message != "" {
+			notifyErr = fmt.Errorf("%s: %w", entry.Message, err)
+		} else {
+			notifyErr = err
+		}
+	} else {
+		notifyErr = fmt.Errorf("%s", entry.Message)
+	}
 
-	if err == nil {
-		log.Hooks.Add(hook)
+	metadata := bugsnag.MetaData{}
+	metadata["metadata"] = make(map[string]interface{})
+	for key, val := range entry.Data {
+		if key != "error" {
+			metadata["metadata"][key] = val
+		}
+	}
+
+	skipStackFrames := 4
+	errWithStack := bugsnag_errors.New(notifyErr, skipStackFrames)
+	bugsnagErr := bugsnag.Notify(errWithStack, metadata)
+	if bugsnagErr != nil {
+		return bugsnagErr
+	}
+
+	return nil
+}
+
+func (b *bugsnagHook) Levels() []logrus.Level {
+	return []logrus.Level{
+		logrus.ErrorLevel,
+		logrus.FatalLevel,
+		logrus.PanicLevel,
 	}
 }
 
@@ -247,7 +282,7 @@ func new(withBugsnag bool, config LoggingConfig) *Logger {
 	log.Level = getLogrusLogLevel(config.LogLevel)
 
 	if withBugsnag {
-		addBugsnagHook(log)
+		log.Hooks.Add(&bugsnagHook{})
 	}
 
 	return &Logger{log}
@@ -262,8 +297,27 @@ func Init(config LoggingConfig) {
 			NotifyReleaseStages: config.BugsnagNotifyReleaseStages,
 			ProjectPackages:     config.BugsnagProjectPackages,
 			ProjectPaths:        config.BugsnagProjectPaths,
+			PackageRoot:         config.BugsnagPackageRoot,
 			Logger:              stdlog.New(new(false, config).Writer(), "bugsnag: ", 0),
 		})
+		bugsnag.OnBeforeNotify(
+			func(event *bugsnag.Event, config *bugsnag.Configuration) error {
+				errClass := event.ErrorClass
+				for {
+					if errClass != "*fmt.wrapError" {
+						break
+					}
+
+					wrappedError := errors.Unwrap(event.Error.Err)
+					if wrappedError != nil {
+						errClass = reflect.TypeOf(wrappedError).String()
+					} else {
+						break
+					}
+				}
+				event.ErrorClass = errClass
+				return nil
+			})
 		Log = new(true, config)
 	}
 }
