@@ -317,7 +317,7 @@ func Init(config LoggingConfig) {
 					}
 					count++
 					if count >= 11 {
-						Log.Infof("Failed to unwrap error %s %s %+v", event.ErrorClass, errClass, event.Error)
+						stdlog.Printf("Failed to unwrap error %s %s %+v", event.ErrorClass, errClass, event.Error)
 					}
 				}
 				event.ErrorClass = errClass
