@@ -303,6 +303,7 @@ func Init(config LoggingConfig) {
 		bugsnag.OnBeforeNotify(
 			func(event *bugsnag.Event, config *bugsnag.Configuration) error {
 				errClass := event.ErrorClass
+				count := 0
 				for {
 					if errClass != "*fmt.wrapError" {
 						break
@@ -313,6 +314,10 @@ func Init(config LoggingConfig) {
 						errClass = reflect.TypeOf(wrappedError).String()
 					} else {
 						break
+					}
+					count++
+					if count >= 11 {
+						Log.Infof("Failed to unwrap error %s %s %+v", event.ErrorClass, errClass, event.Error)
 					}
 				}
 				event.ErrorClass = errClass
