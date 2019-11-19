@@ -121,11 +121,11 @@ func (e *Entry) WithRutilus() *Entry {
 }
 
 func (e *Entry) WithHTTPMethod(method string) *Entry {
-	return &Entry{e.Entry.WithField("http_method", method)}
+	return &Entry{e.Entry.WithField("http.method", method)}
 }
 
 func (e *Entry) WithHTTPResponseCode(code int) *Entry {
-	return &Entry{e.Entry.WithField("http_response_code", strconv.Itoa(code))}
+	return &Entry{e.Entry.WithField("http.status_code", strconv.Itoa(code))}
 }
 
 // WithStringFieldIgnoreEmpty adds string value is empty - otherwise noop
@@ -137,7 +137,7 @@ func (e *Entry) WithStringFieldIgnoreEmpty(field string, value string) *Entry {
 }
 
 func (e *Entry) WithUser(userID uint64) *Entry {
-	return e.WithField("user_id", userID)
+	return e.WithField("usr.id", userID)
 }
 
 // WithEvent parses and event given as string and returns an entry
@@ -175,13 +175,13 @@ func (e *Entry) WithNSQMessageID(id nsq.MessageID) *Entry {
 
 func (e *Entry) WithDuration(d time.Duration) *Entry {
 	return e.
-		WithField("duration_ms", d.Round(time.Millisecond).Nanoseconds()/1000000)
+		WithField("duration", d.Nanoseconds())
 }
 
 func (e *Entry) WithE2EDuration(d time.Duration) *Entry {
 	return e.WithField(
-		"e2e_duration_ms",
-		d.Round(time.Millisecond).Nanoseconds()/1000000,
+		"e2e_duration",
+		d.Nanoseconds(),
 	)
 }
 
@@ -234,7 +234,7 @@ func getLogrusLogLevel(level string) logrus.Level {
 
 func (b *bugsnagHook) Fire(entry *logrus.Entry) error {
 	var notifyErr error
-	err, ok := entry.Data["error"].(error)
+	err, ok := entry.Data[logrus.ErrorKey].(error)
 	if ok {
 		if entry.Message != "" {
 			notifyErr = fmt.Errorf("%s: %w", entry.Message, err)
@@ -248,7 +248,7 @@ func (b *bugsnagHook) Fire(entry *logrus.Entry) error {
 	metadata := bugsnag.MetaData{}
 	metadata["metadata"] = make(map[string]interface{})
 	for key, val := range entry.Data {
-		if key != "error" {
+		if key != logrus.ErrorKey {
 			metadata["metadata"][key] = val
 		}
 	}
@@ -273,10 +273,13 @@ func (b *bugsnagHook) Levels() []logrus.Level {
 
 func new(withBugsnag bool, config LoggingConfig) *Logger {
 	log := logrus.New()
+	logrus.ErrorKey = "error.message"
 	log.Formatter = &logrus.JSONFormatter{
 		TimestampFormat: time.RFC3339Nano,
 		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyMsg: "message",
+			logrus.FieldKeyMsg:  "message",
+			logrus.FieldKeyFunc: "logger.method_name",
+			logrus.FieldKeyFile: "logger.name",
 		},
 	}
 	log.Level = getLogrusLogLevel(config.LogLevel)
