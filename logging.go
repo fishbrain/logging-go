@@ -198,7 +198,7 @@ func (e *Entry) WithChannel(channel string) *Entry {
 }
 
 func (e *Entry) WithError(err error) *Entry {
-	return &Entry{e.Entry.WithError(err)}
+	return &Entry{e.Entry.WithError(bugsnag_errors.New(err, 2))}
 }
 
 func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
@@ -213,6 +213,10 @@ func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
 		})}
 	}
 	return e
+}
+
+func Errorf(format string, a ...interface{}) *bugsnag_errors.Error {
+	return bugsnag_errors.New(fmt.Errorf(format, a...), 1)
 }
 
 func getLogrusLogLevel(level string) logrus.Level {
@@ -234,14 +238,16 @@ func getLogrusLogLevel(level string) logrus.Level {
 
 func (b *bugsnagHook) Fire(entry *logrus.Entry) error {
 	var notifyErr error
-	err, ok := entry.Data[logrus.ErrorKey].(error)
-	if ok {
+	switch err := entry.Data[logrus.ErrorKey].(type) {
+	case *bugsnag_errors.Error:
+		notifyErr = err
+	case error:
 		if entry.Message != "" {
 			notifyErr = fmt.Errorf("%s: %w", entry.Message, err)
 		} else {
 			notifyErr = err
 		}
-	} else {
+	default:
 		notifyErr = fmt.Errorf("%s", entry.Message)
 	}
 
@@ -307,12 +313,13 @@ func Init(config LoggingConfig) {
 			func(event *bugsnag.Event, config *bugsnag.Configuration) error {
 				errClass := event.ErrorClass
 				count := 0
+				wrappedError := event.Error.Err
 				for {
 					if errClass != "*fmt.wrapError" {
 						break
 					}
 
-					wrappedError := errors.Unwrap(event.Error.Err)
+					wrappedError = errors.Unwrap(wrappedError)
 					if wrappedError != nil {
 						errClass = reflect.TypeOf(wrappedError).String()
 					} else {
@@ -324,6 +331,7 @@ func Init(config LoggingConfig) {
 						break
 					}
 				}
+				event.Error.Err = wrappedError
 				event.ErrorClass = errClass
 				return nil
 			})
