@@ -335,7 +335,6 @@ func Init(config LoggingConfig) {
 						break
 					}
 				}
-				event.Error.Err = wrappedError
 				event.ErrorClass = errClass
 				return nil
 			})
