@@ -109,7 +109,7 @@ func (l *Logger) WithDDTrace(ctx context.Context) *Entry {
 }
 
 func (l *Logger) WithError(err error) *Entry {
-	return l.NewEntry().WithError(err)
+	return l.NewEntry().WithError(bugsnag_errors.New(err, 1))
 }
 
 func (e *Entry) WithField(field string, value interface{}) *Entry {
@@ -198,7 +198,7 @@ func (e *Entry) WithChannel(channel string) *Entry {
 }
 
 func (e *Entry) WithError(err error) *Entry {
-	return &Entry{e.Entry.WithError(bugsnag_errors.New(err, 2))}
+	return &Entry{e.Entry.WithError(bugsnag_errors.New(err, 1))}
 }
 
 func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
@@ -217,6 +217,10 @@ func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
 
 func Errorf(format string, a ...interface{}) *bugsnag_errors.Error {
 	return bugsnag_errors.New(fmt.Errorf(format, a...), 1)
+}
+
+func ErrorWithStacktrace(err error) *bugsnag_errors.Error {
+	return bugsnag_errors.New(err, 1)
 }
 
 func getLogrusLogLevel(level string) logrus.Level {
