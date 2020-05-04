@@ -17,7 +17,7 @@ require (
 	github.com/nsqio/go-nsq v1.0.8
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
-	github.com/sirupsen/logrus v1.5.0
+	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.5.1
 	github.com/tinylib/msgp v1.1.1 // indirect
 	golang.org/x/sys v0.0.0-20200217220822-9197077df867 // indirect
