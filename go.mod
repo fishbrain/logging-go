@@ -14,7 +14,7 @@ require (
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
-	github.com/nsqio/go-nsq v1.0.8
+	github.com/nsqio/go-nsq v1.1.0
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.5.0
