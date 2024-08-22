@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go"
-	bugsnag_errors "github.com/bugsnag/bugsnag-go/errors"
+	"github.com/bugsnag/bugsnag-go/v2"
+	bugsnag_errors "github.com/bugsnag/bugsnag-go/v2/errors"
 	nsq "github.com/nsqio/go-nsq"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -32,8 +32,6 @@ type LoggingConfig struct {
 	BugsnagAPIKey              string
 	BugsnagNotifyReleaseStages []string
 	BugsnagProjectPackages     []string
-	BugsnagProjectPaths        []string
-	BugsnagPackageRoot         string
 }
 
 type Logger struct {
@@ -309,8 +307,6 @@ func Init(config LoggingConfig) {
 			AppVersion:          config.AppVersion,
 			NotifyReleaseStages: config.BugsnagNotifyReleaseStages,
 			ProjectPackages:     config.BugsnagProjectPackages,
-			ProjectPaths:        config.BugsnagProjectPaths,
-			PackageRoot:         config.BugsnagPackageRoot,
 			Logger:              stdlog.New(new(false, config).Writer(), "bugsnag: ", 0),
 		})
 		bugsnag.OnBeforeNotify(
