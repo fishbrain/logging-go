@@ -6,7 +6,7 @@ require (
 	github.com/bugsnag/bugsnag-go/v2 v2.5.1
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.70.1
 )
 
