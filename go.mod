@@ -3,7 +3,7 @@ module github.com/fishbrain/logging-go
 go 1.23.0
 
 require (
-	github.com/bugsnag/bugsnag-go/v2 v2.6.1
+	github.com/bugsnag/bugsnag-go/v2 v2.6.2
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
