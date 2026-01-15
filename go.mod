@@ -7,7 +7,7 @@ toolchain go1.24.11
 require (
 	github.com/bugsnag/bugsnag-go/v2 v2.6.2
 	github.com/nsqio/go-nsq v1.1.0
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/DataDog/dd-trace-go.v1 v1.74.8
 )
