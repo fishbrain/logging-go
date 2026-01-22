@@ -2,7 +2,7 @@ module github.com/fishbrain/logging-go
 
 go 1.24.0
 
-toolchain go1.24.11
+toolchain go1.24.12
 
 require (
 	github.com/bugsnag/bugsnag-go/v2 v2.6.2
