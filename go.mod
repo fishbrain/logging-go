@@ -9,7 +9,7 @@ require (
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
-	gopkg.in/DataDog/dd-trace-go.v1 v1.74.8
+	gopkg.in/DataDog/dd-trace-go.v2 v2.5.0
 )
 
 require (
