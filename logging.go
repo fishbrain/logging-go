@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/bugsnag/bugsnag-go/v2"
 	bugsnag_errors "github.com/bugsnag/bugsnag-go/v2/errors"
 	nsq "github.com/nsqio/go-nsq"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
@@ -204,7 +204,7 @@ func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
 		// there was a span in the context
-		traceID, spanID = span.Context().TraceID(), span.Context().SpanID()
+		traceID, spanID = span.Context().TraceIDLower(), span.Context().SpanID()
 		return &Entry{e.Entry.WithFields(logrus.Fields{
 			"dd.trace_id": traceID,
 			"dd.span_id":  spanID,
