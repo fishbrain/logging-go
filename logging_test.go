@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -129,6 +130,117 @@ func TestWithStringFieldIgnoreEmpty(t *testing.T) {
 		logFileContent := logFile.getLogFileContent(t)
 		assert.Contains(t, logFileContent, "nsq", "nsq should be in the log since value is non empty")
 	})
+}
+
+func TestSentryHookFire(t *testing.T) {
+	hook := &sentryHook{}
+
+	t.Run("fires on error entry with error", func(t *testing.T) {
+		entry := &logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "something went wrong",
+			Data: logrus.Fields{
+				logrus.ErrorKey: fmt.Errorf("test error"),
+			},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+
+	t.Run("fires on error entry without error key", func(t *testing.T) {
+		entry := &logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "something went wrong",
+			Data:    logrus.Fields{},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+
+	t.Run("fires on fatal entry", func(t *testing.T) {
+		entry := &logrus.Entry{
+			Level:   logrus.FatalLevel,
+			Message: "fatal problem",
+			Data: logrus.Fields{
+				logrus.ErrorKey: fmt.Errorf("fatal error"),
+			},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+
+	t.Run("includes metadata in extra", func(t *testing.T) {
+		entry := &logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "error with metadata",
+			Data: logrus.Fields{
+				logrus.ErrorKey: fmt.Errorf("test error"),
+				"user_id":       123,
+				"request_id":    "abc-123",
+			},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+}
+
+func TestSentryHookLevels(t *testing.T) {
+	hook := &sentryHook{}
+	levels := hook.Levels()
+	assert.Contains(t, levels, logrus.ErrorLevel)
+	assert.Contains(t, levels, logrus.FatalLevel)
+	assert.Contains(t, levels, logrus.PanicLevel)
+	assert.NotContains(t, levels, logrus.WarnLevel)
+	assert.NotContains(t, levels, logrus.InfoLevel)
+	assert.NotContains(t, levels, logrus.DebugLevel)
+}
+
+func TestShouldNotify(t *testing.T) {
+	t.Run("returns true when release stages is empty", func(t *testing.T) {
+		assert.True(t, shouldNotify([]string{}, "production"))
+	})
+
+	t.Run("returns true when environment matches", func(t *testing.T) {
+		assert.True(t, shouldNotify([]string{"production", "staging"}, "production"))
+	})
+
+	t.Run("returns false when environment does not match", func(t *testing.T) {
+		assert.False(t, shouldNotify([]string{"production", "staging"}, "development"))
+	})
+
+	t.Run("returns true when nil release stages", func(t *testing.T) {
+		assert.True(t, shouldNotify(nil, "production"))
+	})
+}
+
+func TestNewWithSentry(t *testing.T) {
+	logger := new(false, true, LoggingConfig{LogLevel: "INFO"})
+	assert.NotNil(t, logger)
+
+	hasSentryHook := false
+	for _, hooks := range logger.Hooks {
+		for _, hook := range hooks {
+			if _, ok := hook.(*sentryHook); ok {
+				hasSentryHook = true
+			}
+		}
+	}
+	assert.True(t, hasSentryHook, "logger should have sentry hook")
+}
+
+func TestNewWithoutSentry(t *testing.T) {
+	logger := new(false, false, LoggingConfig{LogLevel: "INFO"})
+	assert.NotNil(t, logger)
+
+	hasSentryHook := false
+	for _, hooks := range logger.Hooks {
+		for _, hook := range hooks {
+			if _, ok := hook.(*sentryHook); ok {
+				hasSentryHook = true
+			}
+		}
+	}
+	assert.False(t, hasSentryHook, "logger should not have sentry hook")
 }
 
 func TestNSQLogger(t *testing.T) {
