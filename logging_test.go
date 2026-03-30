@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -214,7 +215,7 @@ func TestShouldNotify(t *testing.T) {
 }
 
 func TestNewWithSentry(t *testing.T) {
-	logger := new(false, true, LoggingConfig{LogLevel: "INFO"})
+	logger := new(true, LoggingConfig{LogLevel: "INFO"})
 	assert.NotNil(t, logger)
 
 	hasSentryHook := false
@@ -229,7 +230,7 @@ func TestNewWithSentry(t *testing.T) {
 }
 
 func TestNewWithoutSentry(t *testing.T) {
-	logger := new(false, false, LoggingConfig{LogLevel: "INFO"})
+	logger := new(false, LoggingConfig{LogLevel: "INFO"})
 	assert.NotNil(t, logger)
 
 	hasSentryHook := false
@@ -241,6 +242,115 @@ func TestNewWithoutSentry(t *testing.T) {
 		}
 	}
 	assert.False(t, hasSentryHook, "logger should not have sentry hook")
+}
+
+func TestErrorWithStacktrace(t *testing.T) {
+	t.Run("wraps error and preserves message", func(t *testing.T) {
+		original := fmt.Errorf("something broke")
+		wrapped := ErrorWithStacktrace(original)
+
+		assert.Equal(t, "something broke", wrapped.Error())
+		assert.True(t, errors.Is(wrapped, original))
+	})
+
+	t.Run("captures a sentry stacktrace", func(t *testing.T) {
+		original := fmt.Errorf("boom")
+		wrapped := ErrorWithStacktrace(original)
+
+		var errSt *errorWithStacktrace
+		assert.True(t, errors.As(wrapped, &errSt))
+		assert.NotNil(t, errSt.stacktrace)
+		assert.NotEmpty(t, errSt.stacktrace.Frames)
+	})
+
+	t.Run("sentry hook attaches stacktrace to event", func(t *testing.T) {
+		original := fmt.Errorf("traced error")
+		wrapped := ErrorWithStacktrace(original)
+
+		hook := &sentryHook{}
+		entry := &logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "test",
+			Data: logrus.Fields{
+				logrus.ErrorKey: wrapped,
+			},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+
+	t.Run("sentry hook works without stacktrace", func(t *testing.T) {
+		hook := &sentryHook{}
+		entry := &logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "plain error",
+			Data: logrus.Fields{
+				logrus.ErrorKey: fmt.Errorf("no stack"),
+			},
+		}
+		err := hook.Fire(entry)
+		assert.NoError(t, err)
+	})
+}
+
+func TestErrorWithStacktracePreservesUnwrap(t *testing.T) {
+	inner := fmt.Errorf("inner")
+	outer := fmt.Errorf("outer: %w", inner)
+	wrapped := ErrorWithStacktrace(outer)
+
+	assert.True(t, errors.Is(wrapped, inner))
+}
+
+func TestSentryHookExtractsStacktraceFromWrappedMessage(t *testing.T) {
+	original := fmt.Errorf("deep error")
+	wrapped := ErrorWithStacktrace(original)
+
+	hook := &sentryHook{}
+	entry := &logrus.Entry{
+		Level:   logrus.ErrorLevel,
+		Message: "context message",
+		Data: logrus.Fields{
+			logrus.ErrorKey: wrapped,
+		},
+	}
+
+	err := hook.Fire(entry)
+	assert.NoError(t, err)
+
+	var errSt *errorWithStacktrace
+	wrappedEntry := fmt.Errorf("%s: %w", entry.Message, wrapped)
+	assert.True(t, errors.As(wrappedEntry, &errSt))
+	assert.NotNil(t, errSt.stacktrace)
+	assert.NotEmpty(t, errSt.stacktrace.Frames)
+}
+
+type customError struct{ msg string }
+
+func (e *customError) Error() string { return e.msg }
+
+func TestErrorClassUnwrapsWrappers(t *testing.T) {
+	t.Run("returns underlying type for fmt-wrapped error", func(t *testing.T) {
+		base := &customError{msg: "boom"}
+		wrapped := fmt.Errorf("context: %w", base)
+		assert.Equal(t, "*logging.customError", errorClass(wrapped))
+	})
+
+	t.Run("returns underlying type for errorWithStacktrace", func(t *testing.T) {
+		base := &customError{msg: "boom"}
+		wrapped := ErrorWithStacktrace(base)
+		assert.Equal(t, "*logging.customError", errorClass(wrapped))
+	})
+
+	t.Run("returns underlying type for nested wrappers", func(t *testing.T) {
+		base := &customError{msg: "boom"}
+		wrapped := fmt.Errorf("outer: %w", ErrorWithStacktrace(fmt.Errorf("inner: %w", base)))
+		assert.Equal(t, "*logging.customError", errorClass(wrapped))
+	})
+
+	t.Run("returns wrapper type when chain terminates without unwrapping", func(t *testing.T) {
+		bare := fmt.Errorf("just a string")
+		assert.Equal(t, "*errors.errorString", errorClass(bare))
+	})
 }
 
 func TestNSQLogger(t *testing.T) {

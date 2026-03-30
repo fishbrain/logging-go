@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/bugsnag/bugsnag-go/v2"
-	bugsnag_errors "github.com/bugsnag/bugsnag-go/v2/errors"
 	"github.com/getsentry/sentry-go"
 	nsq "github.com/nsqio/go-nsq"
 	"github.com/sirupsen/logrus"
@@ -30,9 +28,7 @@ type LoggingConfig struct {
 	LogLevel                 string
 	Environment              string
 	AppVersion               string
-	BugsnagAPIKey            string
 	ErrorNotifyReleaseStages []string
-	BugsnagProjectPackages   []string
 	SentryDSN                string
 }
 
@@ -40,9 +36,20 @@ type Logger struct {
 	*logrus.Logger
 }
 
-type bugsnagHook struct{}
-
 type sentryHook struct{}
+
+type errorWithStacktrace struct {
+	err        error
+	stacktrace *sentry.Stacktrace
+}
+
+func (e *errorWithStacktrace) Error() string {
+	return e.err.Error()
+}
+
+func (e *errorWithStacktrace) Unwrap() error {
+	return e.err
+}
 
 func (l Logger) getNSQLogLevel() nsq.LogLevel {
 	switch l.Level {
@@ -111,7 +118,7 @@ func (l *Logger) WithDDTrace(ctx context.Context) *Entry {
 }
 
 func (l *Logger) WithError(err error) *Entry {
-	return l.NewEntry().WithError(bugsnag_errors.New(err, 1))
+	return l.NewEntry().WithError(err)
 }
 
 func (e *Entry) WithField(field string, value interface{}) *Entry {
@@ -200,14 +207,13 @@ func (e *Entry) WithChannel(channel string) *Entry {
 }
 
 func (e *Entry) WithError(err error) *Entry {
-	return &Entry{e.Entry.WithError(bugsnag_errors.New(err, 1))}
+	return &Entry{e.Entry.WithError(err)}
 }
 
 func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
 	var traceID, spanID uint64
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
-		// there was a span in the context
 		traceID, spanID = span.Context().TraceIDLower(), span.Context().SpanID()
 		return &Entry{e.Entry.WithFields(logrus.Fields{
 			"dd.trace_id": traceID,
@@ -217,12 +223,15 @@ func (e *Entry) WithDDTrace(ctx context.Context) *Entry {
 	return e
 }
 
-func Errorf(format string, a ...interface{}) *bugsnag_errors.Error {
-	return bugsnag_errors.New(fmt.Errorf(format, a...), 1)
-}
-
-func ErrorWithStacktrace(err error) *bugsnag_errors.Error {
-	return bugsnag_errors.New(err, 1)
+func ErrorWithStacktrace(err error) error {
+	st := sentry.NewStacktrace()
+	if st != nil && len(st.Frames) > 0 {
+		st.Frames = st.Frames[:len(st.Frames)-1]
+	}
+	return &errorWithStacktrace{
+		err:        err,
+		stacktrace: st,
+	}
 }
 
 func getLogrusLogLevel(level string) logrus.Level {
@@ -242,53 +251,12 @@ func getLogrusLogLevel(level string) logrus.Level {
 	return loglevel
 }
 
-func (b *bugsnagHook) Fire(entry *logrus.Entry) error {
-	var notifyErr error
-	switch err := entry.Data[logrus.ErrorKey].(type) {
-	case *bugsnag_errors.Error:
-		notifyErr = err
-	case error:
-		if entry.Message != "" {
-			notifyErr = fmt.Errorf("%s: %w", entry.Message, err)
-		} else {
-			notifyErr = err
-		}
-	default:
-		notifyErr = fmt.Errorf("%s", entry.Message)
-	}
-
-	metadata := bugsnag.MetaData{}
-	metadata["metadata"] = make(map[string]interface{})
-	for key, val := range entry.Data {
-		if key != logrus.ErrorKey {
-			metadata["metadata"][key] = val
-		}
-	}
-
-	skipStackFrames := 4
-	errWithStack := bugsnag_errors.New(notifyErr, skipStackFrames)
-	bugsnagErr := bugsnag.Notify(errWithStack, metadata)
-	if bugsnagErr != nil {
-		return bugsnagErr
-	}
-
-	return nil
-}
-
-func (b *bugsnagHook) Levels() []logrus.Level {
-	return []logrus.Level{
-		logrus.ErrorLevel,
-		logrus.FatalLevel,
-		logrus.PanicLevel,
-	}
-}
-
 func (s *sentryHook) Fire(entry *logrus.Entry) error {
 	var notifyErr error
+	var origErr error
 	switch err := entry.Data[logrus.ErrorKey].(type) {
-	case *bugsnag_errors.Error:
-		notifyErr = err
 	case error:
+		origErr = err
 		if entry.Message != "" {
 			notifyErr = fmt.Errorf("%s: %w", entry.Message, err)
 		} else {
@@ -296,6 +264,7 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 		}
 	default:
 		notifyErr = fmt.Errorf("%s", entry.Message)
+		origErr = notifyErr
 	}
 
 	event := sentry.NewEvent()
@@ -304,9 +273,16 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 		event.Level = sentry.LevelFatal
 	}
 	event.Message = notifyErr.Error()
+	var stacktrace *sentry.Stacktrace
+	var errSt *errorWithStacktrace
+	if errors.As(notifyErr, &errSt) {
+		stacktrace = errSt.stacktrace
+	}
+
 	event.Exception = []sentry.Exception{{
-		Type:  reflect.TypeOf(notifyErr).String(),
-		Value: notifyErr.Error(),
+		Type:       errorClass(origErr),
+		Value:      notifyErr.Error(),
+		Stacktrace: stacktrace,
 	}}
 
 	extra := make(map[string]interface{})
@@ -318,7 +294,36 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 	event.Extra = extra
 
 	sentry.CaptureEvent(event)
+
+	if entry.Level == logrus.FatalLevel || entry.Level == logrus.PanicLevel {
+		sentry.Flush(2 * time.Second)
+	}
 	return nil
+}
+
+// errorClass returns a stable type name for Sentry grouping by unwrapping
+// transparent wrappers (fmt.Errorf with %w, errorWithStacktrace) up to a
+// bounded depth so events group on the underlying error type rather than the
+// wrapper.
+func errorClass(err error) string {
+	for i := 0; i < 11; i++ {
+		t := reflect.TypeOf(err).String()
+		if t != "*fmt.wrapError" && t != "*logging.errorWithStacktrace" {
+			return t
+		}
+		unwrapped := errors.Unwrap(err)
+		if unwrapped == nil {
+			return t
+		}
+		err = unwrapped
+	}
+	return reflect.TypeOf(err).String()
+}
+
+// Flush blocks up to timeout waiting for queued Sentry events to be delivered.
+// Call at service shutdown so the last events aren't lost when the process exits.
+func Flush(timeout time.Duration) bool {
+	return sentry.Flush(timeout)
 }
 
 func (s *sentryHook) Levels() []logrus.Level {
@@ -329,7 +334,7 @@ func (s *sentryHook) Levels() []logrus.Level {
 	}
 }
 
-func new(withBugsnag bool, withSentry bool, config LoggingConfig) *Logger {
+func new(withSentry bool, config LoggingConfig) *Logger {
 	log := logrus.New()
 	logrus.ErrorKey = "error.message"
 	log.Formatter = &logrus.JSONFormatter{
@@ -341,10 +346,6 @@ func new(withBugsnag bool, withSentry bool, config LoggingConfig) *Logger {
 		},
 	}
 	log.Level = getLogrusLogLevel(config.LogLevel)
-
-	if withBugsnag {
-		log.Hooks.Add(&bugsnagHook{})
-	}
 
 	if withSentry {
 		log.Hooks.Add(&sentryHook{})
@@ -364,40 +365,6 @@ func shouldNotify(releaseStages []string, environment string) bool {
 
 func Init(config LoggingConfig) {
 	if nil == Log {
-		bugsnag.Configure(bugsnag.Configuration{
-			APIKey:              config.BugsnagAPIKey,
-			ReleaseStage:        config.Environment,
-			AppVersion:          config.AppVersion,
-			NotifyReleaseStages: config.ErrorNotifyReleaseStages,
-			ProjectPackages:     config.BugsnagProjectPackages,
-			Logger:              stdlog.New(new(false, false, config).Writer(), "bugsnag: ", 0),
-		})
-		bugsnag.OnBeforeNotify(
-			func(event *bugsnag.Event, config *bugsnag.Configuration) error {
-				errClass := event.ErrorClass
-				count := 0
-				wrappedError := event.Error.Err
-				for {
-					if errClass != "*fmt.wrapError" {
-						break
-					}
-
-					wrappedError = errors.Unwrap(wrappedError)
-					if wrappedError != nil {
-						errClass = reflect.TypeOf(wrappedError).String()
-					} else {
-						break
-					}
-					count++
-					if count >= 11 {
-						stdlog.Printf("Failed to unwrap error %s %s %+v", event.ErrorClass, errClass, event.Error)
-						break
-					}
-				}
-				event.ErrorClass = errClass
-				return nil
-			})
-
 		withSentry := false
 		if config.SentryDSN != "" && shouldNotify(config.ErrorNotifyReleaseStages, config.Environment) {
 			err := sentry.Init(sentry.ClientOptions{
@@ -412,6 +379,6 @@ func Init(config LoggingConfig) {
 			}
 		}
 
-		Log = new(true, withSentry, config)
+		Log = new(withSentry, config)
 	}
 }

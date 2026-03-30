@@ -5,8 +5,7 @@ go 1.25.0
 toolchain go1.26.3
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.8.1
-	github.com/bugsnag/bugsnag-go/v2 v2.6.4
+	github.com/DataDog/dd-trace-go/v2 v2.6.0
 	github.com/getsentry/sentry-go v0.43.0
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.4
@@ -35,7 +34,6 @@ require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.8 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/bugsnag/panicwrap v1.3.4 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
