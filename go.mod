@@ -2,7 +2,7 @@ module github.com/fishbrain/logging-go
 
 go 1.24.0
 
-toolchain go1.26.1
+toolchain go1.26.2
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.6.0
