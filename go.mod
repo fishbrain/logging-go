@@ -7,7 +7,7 @@ toolchain go1.26.2
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.6.1
 	github.com/bugsnag/bugsnag-go/v2 v2.6.4
-	github.com/getsentry/sentry-go v0.43.0
+	github.com/getsentry/sentry-go v0.46.2
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
