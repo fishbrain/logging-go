@@ -285,13 +285,15 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 		Stacktrace: stacktrace,
 	}}
 
-	extra := make(map[string]interface{})
+	extra := make(sentry.Context)
 	for key, val := range entry.Data {
 		if key != logrus.ErrorKey {
 			extra[key] = val
 		}
 	}
-	event.Extra = extra
+	if len(extra) > 0 {
+		event.Contexts["extra"] = extra
+	}
 
 	sentry.CaptureEvent(event)
 
