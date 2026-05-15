@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.26.3
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.6.0
+	github.com/DataDog/dd-trace-go/v2 v2.8.1
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.4
@@ -75,6 +75,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
