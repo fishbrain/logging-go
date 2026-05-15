@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.26.3
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.6.0
+	github.com/DataDog/dd-trace-go/v2 v2.6.1
 	github.com/getsentry/sentry-go v0.46.2
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/sirupsen/logrus v1.9.4
