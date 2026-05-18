@@ -234,6 +234,17 @@ func ErrorWithStacktrace(err error) error {
 	}
 }
 
+func Errorf(format string, a ...interface{}) error {
+	st := sentry.NewStacktrace()
+	if st != nil && len(st.Frames) > 0 {
+		st.Frames = st.Frames[:len(st.Frames)-1]
+	}
+	return &errorWithStacktrace{
+		err:        fmt.Errorf(format, a...),
+		stacktrace: st,
+	}
+}
+
 func getLogrusLogLevel(level string) logrus.Level {
 	lookup := map[string]logrus.Level{
 		"ERROR":   logrus.ErrorLevel,

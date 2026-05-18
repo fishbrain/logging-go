@@ -293,6 +293,31 @@ func TestErrorWithStacktrace(t *testing.T) {
 	})
 }
 
+func TestErrorf(t *testing.T) {
+	t.Run("formats and wraps error", func(t *testing.T) {
+		inner := fmt.Errorf("db miss")
+		err := Errorf("user %d not found: %w", 42, inner)
+		assert.Equal(t, "user 42 not found: db miss", err.Error())
+		assert.True(t, errors.Is(err, inner))
+	})
+
+	t.Run("captures a sentry stacktrace", func(t *testing.T) {
+		err := Errorf("boom")
+		var errSt *errorWithStacktrace
+		assert.True(t, errors.As(err, &errSt))
+		assert.NotNil(t, errSt.stacktrace)
+		assert.NotEmpty(t, errSt.stacktrace.Frames)
+	})
+
+	t.Run("top stacktrace frame is the caller, not Errorf", func(t *testing.T) {
+		err := Errorf("boom")
+		var errSt *errorWithStacktrace
+		assert.True(t, errors.As(err, &errSt))
+		top := errSt.stacktrace.Frames[len(errSt.stacktrace.Frames)-1]
+		assert.NotEqual(t, "Errorf", top.Function)
+	})
+}
+
 func TestErrorWithStacktracePreservesUnwrap(t *testing.T) {
 	inner := fmt.Errorf("inner")
 	outer := fmt.Errorf("outer: %w", inner)
