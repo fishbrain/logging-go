@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/nsqio/go-nsq"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -182,6 +183,97 @@ func TestSentryHookFire(t *testing.T) {
 		}
 		err := hook.Fire(entry)
 		assert.NoError(t, err)
+	})
+}
+
+func TestSentryHookBuildEvent(t *testing.T) {
+	hook := &sentryHook{}
+
+	t.Run("plain error gets a fallback stacktrace", func(t *testing.T) {
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "context",
+			Data:    logrus.Fields{logrus.ErrorKey: fmt.Errorf("plain")},
+		})
+		assert.NotEmpty(t, event.Exception)
+		outer := event.Exception[len(event.Exception)-1]
+		assert.NotNil(t, outer.Stacktrace)
+		assert.NotEmpty(t, outer.Stacktrace.Frames)
+	})
+
+	t.Run("entry without error key still gets a stacktrace", func(t *testing.T) {
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "no error attached",
+			Data:    logrus.Fields{},
+		})
+		assert.NotEmpty(t, event.Exception)
+		outer := event.Exception[len(event.Exception)-1]
+		assert.NotNil(t, outer.Stacktrace)
+		assert.NotEmpty(t, outer.Stacktrace.Frames)
+	})
+
+	t.Run("ErrorWithStacktrace's captured frames win over fallback", func(t *testing.T) {
+		wrapped := ErrorWithStacktrace(fmt.Errorf("inner"))
+		var errSt *errorWithStacktrace
+		assert.True(t, errors.As(wrapped, &errSt))
+
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "ctx",
+			Data:    logrus.Fields{logrus.ErrorKey: wrapped},
+		})
+		outer := event.Exception[len(event.Exception)-1]
+		assert.Same(t, errSt.stacktrace, outer.Stacktrace)
+	})
+
+	t.Run("outermost exception type uses errorClass for grouping", func(t *testing.T) {
+		base := &customError{msg: "boom"}
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "ctx",
+			Data:    logrus.Fields{logrus.ErrorKey: base},
+		})
+		outer := event.Exception[len(event.Exception)-1]
+		assert.Equal(t, "*logging.customError", outer.Type)
+	})
+
+	t.Run("wrapped chain produces multiple exceptions", func(t *testing.T) {
+		base := &customError{msg: "boom"}
+		wrapped := fmt.Errorf("middle: %w", base)
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "outer",
+			Data:    logrus.Fields{logrus.ErrorKey: wrapped},
+		})
+		// hook's fmt.Errorf wrapping + middle wrap + base
+		assert.Len(t, event.Exception, 3)
+		assert.Equal(t, "*logging.customError", event.Exception[len(event.Exception)-1].Type)
+	})
+
+	t.Run("fatal level maps to sentry fatal", func(t *testing.T) {
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.FatalLevel,
+			Message: "dead",
+			Data:    logrus.Fields{logrus.ErrorKey: fmt.Errorf("err")},
+		})
+		assert.Equal(t, sentry.LevelFatal, event.Level)
+	})
+
+	t.Run("non-error fields land in extra context", func(t *testing.T) {
+		event := hook.buildEvent(&logrus.Entry{
+			Level:   logrus.ErrorLevel,
+			Message: "msg",
+			Data: logrus.Fields{
+				logrus.ErrorKey: fmt.Errorf("err"),
+				"user_id":       42,
+			},
+		})
+		extra, ok := event.Contexts["extra"]
+		assert.True(t, ok)
+		assert.Equal(t, 42, extra["user_id"])
+		_, hasErr := extra[logrus.ErrorKey]
+		assert.False(t, hasErr)
 	})
 }
 
