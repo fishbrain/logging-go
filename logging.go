@@ -262,7 +262,7 @@ func getLogrusLogLevel(level string) logrus.Level {
 	return loglevel
 }
 
-func (s *sentryHook) Fire(entry *logrus.Entry) error {
+func (s *sentryHook) buildEvent(entry *logrus.Entry) *sentry.Event {
 	var notifyErr error
 	var origErr error
 	switch err := entry.Data[logrus.ErrorKey].(type) {
@@ -284,17 +284,23 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 		event.Level = sentry.LevelFatal
 	}
 	event.Message = notifyErr.Error()
-	var stacktrace *sentry.Stacktrace
-	var errSt *errorWithStacktrace
-	if errors.As(notifyErr, &errSt) {
-		stacktrace = errSt.stacktrace
-	}
 
-	event.Exception = []sentry.Exception{{
-		Type:       errorClass(origErr),
-		Value:      notifyErr.Error(),
-		Stacktrace: stacktrace,
-	}}
+	// SetException walks the error chain, calls ExtractStacktrace on each
+	// link, and falls back to a fresh NewStacktrace() on the outermost
+	// exception when none is found — so events always carry frames.
+	event.SetException(notifyErr, -1)
+	if len(event.Exception) > 0 {
+		outermost := &event.Exception[len(event.Exception)-1]
+		// Group on the underlying error type, not the fmt.Errorf wrapper
+		// the hook itself introduced above.
+		outermost.Type = errorClass(origErr)
+		// Prefer a stacktrace captured at the error's creation site over
+		// the fallback captured here inside the hook.
+		var errSt *errorWithStacktrace
+		if errors.As(notifyErr, &errSt) && errSt.stacktrace != nil {
+			outermost.Stacktrace = errSt.stacktrace
+		}
+	}
 
 	extra := make(sentry.Context)
 	for key, val := range entry.Data {
@@ -305,8 +311,11 @@ func (s *sentryHook) Fire(entry *logrus.Entry) error {
 	if len(extra) > 0 {
 		event.Contexts["extra"] = extra
 	}
+	return event
+}
 
-	sentry.CaptureEvent(event)
+func (s *sentryHook) Fire(entry *logrus.Entry) error {
+	sentry.CaptureEvent(s.buildEvent(entry))
 
 	if entry.Level == logrus.FatalLevel || entry.Level == logrus.PanicLevel {
 		sentry.Flush(2 * time.Second)
