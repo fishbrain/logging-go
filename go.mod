@@ -8,7 +8,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.9.2
 	github.com/getsentry/sentry-go v0.48.0
 	github.com/nsqio/go-nsq v1.1.0
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
 )
 
