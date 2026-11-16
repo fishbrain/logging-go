@@ -15,6 +15,7 @@ jobs:
         id: go
 
       - name: Get dependencies
+        # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell
         run: |
           go get -v -t -d ./...
           if [ -f Gopkg.toml ]; then
